@@ -1,4 +1,4 @@
-# slidev-addons-russell
+# marini-slidev-addons
 
 A [Slidev](https://sli.dev) addon with the reusable Vue components shared by the
 decks in the [`russell-informatica`](https://github.com/russell-informatica)
@@ -21,14 +21,14 @@ the slides:
 | `Counter` | `count` | Minimal -/+ counter. |
 
 > The components are unstyled beyond their markup: `.badge` / `.badge-accent` /
-> `.badge-round` live in the [`slidev-theme-russell`](../theme) theme.
+> `.badge-round` live in the [`marini-slidev-theme`](../theme) theme.
 
 ## Usage
 
 ```md
 ---
 addons:
-  - slidev-addons-russell
+  - marini-slidev-addons
 ---
 ```
 
@@ -37,7 +37,7 @@ Or as an npm git dependency:
 ```json
 {
   "dependencies": {
-    "slidev-addons-russell": "github:russell-informatica/slidev-addons"
+    "marini-slidev-addons": "github:russell-informatica/slidev-addons"
   }
 }
 ```
