@@ -63,12 +63,16 @@ function rawIndexAt(values: Record<number, number | null>, click: number): numbe
   return index
 }
 
-// Geometry of the single pointer lane, in rem. Labels sit on top and a leader
-// line drops from each label down to the top-centre of its target cell. These
-// values are mirrored by the matching rules in the stylesheet below.
-const LABEL_HEIGHT = 1.2
-const ARROW_HEIGHT = 1.3
+// Geometry of the single pointer lane, in rem. Labels sit on top, then a leader
+// line drops to the top-centre of the target cell, stopping a small margin
+// above the grid. The arrow head completes the line and ends exactly at that
+// margin. These values are mirrored by the matching rules below.
+const LABEL_HEIGHT = 1.0
+const ARROW_HEIGHT = 1.1
+const MARGIN_TO_CELL = 0.2
+const HEAD_WIDTH = 0.4
 const LANE_HEIGHT = LABEL_HEIGHT + ARROW_HEIGHT
+
 // Rough width of one monospace character (and the padding around a label), used
 // to spread the pointers that share a target so their labels do not overlap.
 const CHAR_WIDTH = 0.56
@@ -91,10 +95,10 @@ interface Pointer {
   label: string
   /** Index the pointer highlights, or `null` when it is out of bounds. */
   index: number | null
-  /** CSS `left` of both the label and the start of its leader line. */
+  /** CSS `left` of the label and the start of the leader line. */
   left: string
-  arrowTransform: string
-  arrowWidth: string
+  /** Inline style for the leader line (rotated and length-truncated for the head). */
+  lineStyle: Record<string, string>
 }
 
 const pointers = computed<Pointer[]>(() => {
@@ -140,8 +144,7 @@ const pointers = computed<Pointer[]>(() => {
           label: entry.label,
           index: entry.out ? null : entry.index,
           left: '0%',
-          arrowTransform: '',
-          arrowWidth: '',
+          lineStyle: {},
         }
       : null,
   )
@@ -171,11 +174,13 @@ const pointers = computed<Pointer[]>(() => {
         ? (first.edge === 'start' ? total / 2 : -total / 2) + fromCentre
         : fromCentre
 
-      // The leader line runs from the label to the target at grid level, so its
-      // horizontal reach is exactly the label offset (target - label).
+      // The leader line runs from the label toward the target, leaving room for
+      // the arrow head and stopping a small margin above the cell.
       const dx = -offset
-      const length = Math.hypot(dx, ARROW_HEIGHT)
-      const angle = (Math.atan2(ARROW_HEIGHT, dx) * 180) / Math.PI
+      const reach = ARROW_HEIGHT - MARGIN_TO_CELL
+      const targetLength = Math.hypot(dx, reach)
+      const lineLength = Math.max(targetLength - HEAD_WIDTH, 0)
+      const angle = (Math.atan2(reach, dx) * 180) / Math.PI
 
       placed[memberIndex] = {
         ...placed[memberIndex]!,
@@ -184,8 +189,11 @@ const pointers = computed<Pointer[]>(() => {
             ? 'var(--tracker-out-of-bounds, #e5484d)'
             : entry.color ?? 'var(--tracker-pointer-color, #7aa2ff)',
         left: `calc(${target}% + ${offset}rem)`,
-        arrowTransform: `rotate(${angle}deg)`,
-        arrowWidth: `${length}rem`,
+        lineStyle: {
+          left: `calc(${target}% + ${offset}rem)`,
+          width: `${lineLength}rem`,
+          transform: `rotate(${angle}deg)`,
+        },
       }
     })
   }
@@ -210,14 +218,15 @@ const pointers = computed<Pointer[]>(() => {
         <span class="list-tracker__label" :style="{ left: pointer.left }">
           {{ pointer.label }}
         </span>
-        <span
-          class="list-tracker__arrow"
-          :style="{
-            left: pointer.left,
-            width: pointer.arrowWidth,
-            transform: pointer.arrowTransform,
-          }"
-        />
+        <span class="list-tracker__arrow-line" :style="pointer.lineStyle">
+          <svg
+            class="list-tracker__arrow-head"
+            viewBox="0 0 10 9"
+            aria-hidden="true"
+          >
+            <polygon points="0,0 10,4.5 0,9" fill="currentColor" />
+          </svg>
+        </span>
       </div>
     </div>
 
@@ -253,19 +262,24 @@ const pointers = computed<Pointer[]>(() => {
   position: relative;
 }
 
-/* A single lane holds every pointer; those that share a cell sit side by side. */
+/* A single lane holds every pointer; those that share a cell sit side by side.
+   It fades in as it expands when a pointer first appears. */
 .list-tracker__lane {
   position: relative;
   height: 0;
-  transition: height var(--tracker-transition, 220ms) ease;
+  opacity: 0;
+  transition:
+    height var(--tracker-transition, 220ms) ease,
+    opacity var(--tracker-transition, 220ms) ease;
 }
 
 .list-tracker__lane--visible {
   /* Overridden inline from the component to stay in sync with the geometry. */
-  height: var(--tracker-lane-height, 2.5rem);
+  height: var(--tracker-lane-height, 2.1rem);
+  opacity: 1;
 }
 
-/* Transparent wrapper: lets the label and the leader line share the lane. */
+/* Transparent wrapper: lets the label, line and head share the lane. */
 .list-tracker__pointer {
   display: contents;
 }
@@ -275,7 +289,7 @@ const pointers = computed<Pointer[]>(() => {
   top: 0;
   display: flex;
   align-items: center;
-  height: 1.2rem;
+  height: 1.0rem;
   transform: translateX(-50%);
   transition: left var(--tracker-transition, 220ms) ease;
   white-space: nowrap;
@@ -284,10 +298,11 @@ const pointers = computed<Pointer[]>(() => {
   line-height: 1;
 }
 
-.list-tracker__arrow {
+/* The leader line rotates from the label toward the target. */
+.list-tracker__arrow-line {
   position: absolute;
-  top: 1.2rem;
-  height: 1px;
+  top: 1.0rem;
+  height: 1.5px;
   background: currentColor;
   transform-origin: 0 50%;
   transition:
@@ -296,16 +311,16 @@ const pointers = computed<Pointer[]>(() => {
     transform var(--tracker-transition, 220ms) ease;
 }
 
-.list-tracker__arrow::after {
-  content: '';
+/* Real SVG arrow head, not a border hack. It sits at the end of the line and
+   inherits the parent's rotation so it always points along the line. */
+.list-tracker__arrow-head {
   position: absolute;
-  top: 50%;
   left: 100%;
-  margin-left: -0.35rem;
-  border-left: 0.35rem solid currentColor;
-  border-top: 0.24rem solid transparent;
-  border-bottom: 0.24rem solid transparent;
+  top: 50%;
+  width: 0.4rem;
+  height: 0.36rem;
   transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .list-tracker__grid {
@@ -350,7 +365,7 @@ const pointers = computed<Pointer[]>(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .list-tracker__label,
-  .list-tracker__arrow,
+  .list-tracker__arrow-line,
   .list-tracker__lane {
     transition: none;
   }
