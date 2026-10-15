@@ -29,7 +29,7 @@ const props = withDefaults(
      * - `'wrap'`: valid Python indexing, shown at `items.length + index`.
      */
     negative?: 'invalid' | 'wrap'
-    /** Mark out-of-bounds pointers in red and turn their arrow towards the edge. */
+    /** Mark out-of-bounds pointers in red. */
     markOutOfBounds?: boolean
   }>(),
   {
@@ -63,85 +63,161 @@ function rawIndexAt(values: Record<number, number | null>, click: number): numbe
   return index
 }
 
-interface Pointer {
+// Geometry of the single pointer lane, in rem. Labels sit on top and a leader
+// line drops from each label down to the top-centre of its target cell. These
+// values are mirrored by the matching rules in the stylesheet below.
+const LABEL_HEIGHT = 1.2
+const ARROW_HEIGHT = 1.3
+const LANE_HEIGHT = LABEL_HEIGHT + ARROW_HEIGHT
+// Rough width of one monospace character (and the padding around a label), used
+// to spread the pointers that share a target so their labels do not overlap.
+const CHAR_WIDTH = 0.56
+const LABEL_PADDING = 0.5
+const LABEL_GAP = 0.4
+
+interface Resolved {
   name: string
   color?: string
   label: string
-  index: number | null
-  left: number
+  raw: number
+  index: number
   edge: 'start' | 'end' | null
   out: boolean
 }
 
-// One lane per tracker, always rendered, so the lane height can animate between
-// hidden (0) and visible instead of making the grid jump when a pointer appears.
-const pointers = computed<Pointer[]>(() =>
-  trackers.value.map((tracker) => {
+interface Pointer {
+  name: string
+  color: string
+  label: string
+  /** Index the pointer highlights, or `null` when it is out of bounds. */
+  index: number | null
+  /** CSS `left` of both the label and the start of its leader line. */
+  left: string
+  arrowTransform: string
+  arrowWidth: string
+}
+
+const pointers = computed<Pointer[]>(() => {
+  const cols = columns.value
+
+  const resolved = trackers.value.map<Resolved | null>((tracker) => {
     const raw = rawIndexAt(tracker.values, clicks.value)
-    if (raw === null) {
-      return {
-        name: tracker.name,
-        color: tracker.color,
-        label: '',
-        index: null,
-        left: 0,
-        edge: null,
-        out: false,
-      }
-    }
+    if (raw === null) return null
 
     // Resolve Python-style negative indices when enabled.
-    const index = raw < 0 && props.negative === 'wrap' ? columns.value + raw : raw
-    const inRange = index >= 0 && index < columns.value
-
-    // Out-of-bounds pointers are pinned to the nearest grid edge and their
-    // label is anchored inwards, so nothing can overflow the component.
-    const edge = inRange ? null : index < 0 ? 'start' : 'end'
-    const left = inRange
-      ? ((index + 0.5) / columns.value) * 100
-      : edge === 'start' ? 0 : 100
+    const index = raw < 0 && props.negative === 'wrap' ? cols + raw : raw
+    const inRange = cols > 0 && index >= 0 && index < cols
+    const edge: 'start' | 'end' | null = inRange ? null : index < 0 ? 'start' : 'end'
 
     return {
       name: tracker.name,
       color: tracker.color,
       label: `${tracker.name}=${raw}`,
+      raw,
       index,
-      left,
       edge,
       out: !inRange,
     }
-  }),
-)
+  })
+
+  // Group the visible pointers by the cell (or edge) they point at, keeping the
+  // trackers' declaration order so pointers that land on the same cell stay in
+  // their left/right order instead of swapping.
+  const groups = new Map<string, number[]>()
+  resolved.forEach((entry, i) => {
+    if (!entry) return
+    const key = entry.out ? `edge:${entry.edge}` : `cell:${entry.index}`
+    const members = groups.get(key)
+    if (members) members.push(i)
+    else groups.set(key, [i])
+  })
+
+  const placed = resolved.map<Pointer | null>((entry) =>
+    entry
+      ? {
+          name: entry.name,
+          color: 'var(--tracker-pointer-color, #7aa2ff)',
+          label: entry.label,
+          index: entry.out ? null : entry.index,
+          left: '0%',
+          arrowTransform: '',
+          arrowWidth: '',
+        }
+      : null,
+  )
+
+  for (const [key, members] of groups) {
+    const first = resolved[members[0]]!
+    // Out-of-bounds pointers are pinned to the nearest grid edge.
+    const target = first.out
+      ? first.edge === 'start'
+        ? 0
+        : 100
+      : ((first.index + 0.5) / cols) * 100
+
+    // Lay the group out from estimated label widths, then turn each label's
+    // offset from the group centre into its distance from the target.
+    const widths = members.map((i) => resolved[i]!.label.length * CHAR_WIDTH + LABEL_PADDING)
+    const total = widths.reduce((sum, width) => sum + width, 0) + LABEL_GAP * (members.length - 1)
+
+    members.forEach((memberIndex, slot) => {
+      const entry = resolved[memberIndex]!
+      const width = widths[slot]
+      const before = widths.slice(0, slot).reduce((sum, w) => sum + w, 0) + LABEL_GAP * slot
+      const fromCentre = before + width / 2 - total / 2
+      // Edge groups are pushed inwards so the outermost label stays inside the
+      // component; cell groups are centred on the cell.
+      const offset = first.out
+        ? (first.edge === 'start' ? total / 2 : -total / 2) + fromCentre
+        : fromCentre
+
+      // The leader line runs from the label to the target at grid level, so its
+      // horizontal reach is exactly the label offset (target - label).
+      const dx = -offset
+      const length = Math.hypot(dx, ARROW_HEIGHT)
+      const angle = (Math.atan2(ARROW_HEIGHT, dx) * 180) / Math.PI
+
+      placed[memberIndex] = {
+        ...placed[memberIndex]!,
+        color:
+          entry.out && props.markOutOfBounds
+            ? 'var(--tracker-out-of-bounds, #e5484d)'
+            : entry.color ?? 'var(--tracker-pointer-color, #7aa2ff)',
+        left: `calc(${target}% + ${offset}rem)`,
+        arrowTransform: `rotate(${angle}deg)`,
+        arrowWidth: `${length}rem`,
+      }
+    })
+  }
+
+  return placed.filter((pointer): pointer is Pointer => pointer !== null)
+})
 </script>
 
 <template>
   <div class="list-tracker">
-    <div class="list-tracker__lanes">
+    <div
+      class="list-tracker__lane"
+      :class="{ 'list-tracker__lane--visible': pointers.length > 0 }"
+      :style="{ '--tracker-lane-height': `${LANE_HEIGHT}rem` }"
+    >
       <div
         v-for="pointer in pointers"
         :key="pointer.name"
-        class="list-tracker__lane"
-        :class="{ 'list-tracker__lane--visible': pointer.index !== null }"
+        class="list-tracker__pointer"
+        :style="{ color: pointer.color }"
       >
-        <div
-          v-if="pointer.index !== null"
-          class="list-tracker__pointer"
-          :class="{
-            'list-tracker__pointer--out': pointer.out && markOutOfBounds,
-            'list-tracker__pointer--start': pointer.edge === 'start',
-            'list-tracker__pointer--end': pointer.edge === 'end',
+        <span class="list-tracker__label" :style="{ left: pointer.left }">
+          {{ pointer.label }}
+        </span>
+        <span
+          class="list-tracker__arrow"
+          :style="{
+            left: pointer.left,
+            width: pointer.arrowWidth,
+            transform: pointer.arrowTransform,
           }"
-          :style="{ left: `${pointer.left}%`, color: pointer.color }"
-        >
-          <span class="list-tracker__label">{{ pointer.label }}</span>
-          <span
-            class="list-tracker__arrow"
-            :class="{
-              'list-tracker__arrow--left': pointer.out && markOutOfBounds && pointer.edge === 'start',
-              'list-tracker__arrow--right': pointer.out && markOutOfBounds && pointer.edge === 'end',
-            }"
-          />
-        </div>
+        />
       </div>
     </div>
 
@@ -177,74 +253,59 @@ const pointers = computed<Pointer[]>(() =>
   position: relative;
 }
 
-.list-tracker__lanes {
-  display: flex;
-  flex-direction: column;
-}
-
+/* A single lane holds every pointer; those that share a cell sit side by side. */
 .list-tracker__lane {
   position: relative;
   height: 0;
-  overflow: hidden;
   transition: height var(--tracker-transition, 220ms) ease;
 }
 
 .list-tracker__lane--visible {
-  height: var(--tracker-lane-height, 2.1rem);
+  /* Overridden inline from the component to stay in sync with the geometry. */
+  height: var(--tracker-lane-height, 2.5rem);
 }
 
+/* Transparent wrapper: lets the label and the leader line share the lane. */
 .list-tracker__pointer {
-  position: absolute;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: var(--tracker-pointer-color, #7aa2ff);
-  transform: translateX(-50%);
-  transition: left 260ms ease, transform 260ms ease;
-  white-space: nowrap;
-}
-
-/* Edge pointers anchor inwards so the label never leaves the component. */
-.list-tracker__pointer--start {
-  transform: translateX(0);
-}
-
-.list-tracker__pointer--end {
-  transform: translateX(-100%);
-}
-
-.list-tracker__pointer--out {
-  color: var(--tracker-out-of-bounds, #e5484d);
+  display: contents;
 }
 
 .list-tracker__label {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  height: 1.2rem;
+  transform: translateX(-50%);
+  transition: left var(--tracker-transition, 220ms) ease;
+  white-space: nowrap;
   font-family: var(--tracker-font, var(--slidev-code-font-family, ui-monospace, monospace));
   font-size: 0.82em;
-  line-height: 1.2;
+  line-height: 1;
 }
 
 .list-tracker__arrow {
-  width: 0;
-  height: 0;
-  margin-top: 0.1rem;
-  border-left: 0.4rem solid transparent;
-  border-right: 0.4rem solid transparent;
-  border-top: 0.5rem solid currentColor;
+  position: absolute;
+  top: 1.2rem;
+  height: 1px;
+  background: currentColor;
+  transform-origin: 0 50%;
+  transition:
+    left var(--tracker-transition, 220ms) ease,
+    width var(--tracker-transition, 220ms) ease,
+    transform var(--tracker-transition, 220ms) ease;
 }
 
-.list-tracker__arrow--left {
-  border-left: 0;
-  border-right: 0.5rem solid currentColor;
-  border-top: 0.4rem solid transparent;
-  border-bottom: 0.4rem solid transparent;
-}
-
-.list-tracker__arrow--right {
-  border-right: 0;
-  border-left: 0.5rem solid currentColor;
-  border-top: 0.4rem solid transparent;
-  border-bottom: 0.4rem solid transparent;
+.list-tracker__arrow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  margin-left: -0.35rem;
+  border-left: 0.35rem solid currentColor;
+  border-top: 0.24rem solid transparent;
+  border-bottom: 0.24rem solid transparent;
+  transform: translateY(-50%);
 }
 
 .list-tracker__grid {
@@ -288,7 +349,8 @@ const pointers = computed<Pointer[]>(() =>
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .list-tracker__pointer,
+  .list-tracker__label,
+  .list-tracker__arrow,
   .list-tracker__lane {
     transition: none;
   }

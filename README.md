@@ -38,7 +38,7 @@ the current click. Values use the same absolute click numbers as `v-click`:
 At click `c` a pointer takes the value of the greatest key `<= c`; before the
 first key, or when the value is `null`, it is hidden. An out-of-bounds index
 (`>= items.length`, or negative) pins the pointer to the nearest grid edge,
-turns it red and flips the arrow towards that edge, so it never overflows the
+turns it red and aims its arrow towards that edge, so it never overflows the
 component. Set `:mark-out-of-bounds="false"` to keep edge pointers plain. The
 red can be themed with the `--tracker-out-of-bounds` CSS variable.
 
@@ -53,7 +53,10 @@ them as valid Python indices instead — the pointer is drawn at
   negative="wrap"
 />
 ```
-Multiple pointers can be tracked at once, each on its own lane:
+Multiple pointers share a single lane: each label drops a leader line onto the
+top-centre of its cell. When several pointers land on the same cell they are
+drawn next to each other, in the order the trackers are declared, so `i` stays
+on the left and `j` on the right if that is how they were ordered:
 
 ```md
 <ListTracker
@@ -78,7 +81,7 @@ same variables to retheme the components elsewhere.
 | `Badge` | `--badge-bg`, `--badge-color`, `--badge-border`, `--badge-radius`, `--badge-padding`, `--badge-font`, `--badge-font-size`, `--badge-font-weight`, `--badge-line-height`, `--badge-letter-spacing`, `--badge-accent-color`, `--badge-round-padding`, `--badge-round-font-size` |
 | `Counter` | `--counter-border`, `--counter-radius`, `--counter-padding`, `--counter-font`, `--counter-hover-bg` |
 | `ClicksSlider` | `--clicks-slider-accent`, `--clicks-slider-track`, `--clicks-slider-radius`, `--clicks-slider-font` |
-| `ListTracker` | `--tracker-border`, `--tracker-cell-bg`, `--tracker-cell-fg`, `--tracker-radius`, `--tracker-font`, `--tracker-index-color`, `--tracker-pointer-color`, `--tracker-active-bg`, `--tracker-out-of-bounds`, `--tracker-lane-height`, `--tracker-transition` |
+| `ListTracker` | `--tracker-border`, `--tracker-cell-bg`, `--tracker-cell-fg`, `--tracker-radius`, `--tracker-font`, `--tracker-index-color`, `--tracker-pointer-color`, `--tracker-active-bg`, `--tracker-out-of-bounds`, `--tracker-transition` |
 
 ## Usage
 
