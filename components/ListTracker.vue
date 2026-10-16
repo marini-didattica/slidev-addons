@@ -13,12 +13,29 @@ interface Tracker {
   color?: string
 }
 
+/**
+ * An in-place edit of one cell over the clicks of a slide. `values` maps an
+ * absolute click number to the new cell content: at click `c` the cell shows
+ * the entry of the greatest key `<= c`, falling back to the matching `items`
+ * entry. `index` is the position in `items` the edits apply to.
+ */
+interface Update {
+  index: number
+  values: Record<number, string | number>
+}
+
 const props = withDefaults(
   defineProps<{
     /** Cells drawn in order, one per list element. */
     items: (string | number)[]
     /** Pointers to draw; either named object or an ordered array. */
     trackers: Tracker[] | Record<string, Record<number, number | null>>
+    /**
+     * In-place edits of the list over the clicks, keeping its length fixed.
+     * Either an array of `Update` objects or a record mapping a cell index to
+     * its per-click contents.
+     */
+    updates?: Update[] | Record<number, Record<number, string | number>>
     /** Highlight the cell currently pointed at. */
     highlight?: boolean
     /**
@@ -54,20 +71,51 @@ const trackers = computed<Tracker[]>(() =>
     : Object.entries(props.trackers).map(([name, values]) => ({ name, values })),
 )
 
+const updates = computed<Update[]>(() =>
+  Array.isArray(props.updates)
+    ? props.updates
+    : Object.entries(props.updates ?? {}).map(([index, values]) => ({ index: Number(index), values })),
+)
+
 const columns = computed(() => props.items.length)
 
-function rawIndexAt(values: Record<number, number | null>, click: number): number | null {
+/**
+ * Value of the greatest key `<= click`, or `undefined` when no key matches yet.
+ * Shared by the tracker pointers (indices) and the cell updates (contents).
+ */
+function valueAt<T>(values: Record<number, T>, click: number): T | undefined {
   let bestKey = -Infinity
-  let index: number | null = null
-  for (const [key, value] of Object.entries(values)) {
+  let value: T | undefined
+  for (const [key, candidate] of Object.entries(values)) {
     const clickKey = Number(key)
     if (clickKey <= click && clickKey > bestKey) {
       bestKey = clickKey
-      index = value
+      value = candidate as T
     }
   }
-  return index
+  return value
 }
+
+/** Cell contents shown at the current click, after applying `updates`. */
+const cellValues = computed(() =>
+  props.items.map((item, index) => {
+    const update = updates.value.find((entry) => entry.index === index)
+    if (!update) return item
+    const value = valueAt(update.values, clicks.value)
+    return value === undefined ? item : value
+  }),
+)
+
+/** Cells edited exactly on the current click; used to flash them. */
+const changedCells = computed(() => {
+  const changed = new Set<number>()
+  for (const update of updates.value) {
+    if (Object.prototype.hasOwnProperty.call(update.values, clicks.value)) {
+      changed.add(update.index)
+    }
+  }
+  return changed
+})
 
 // Geometry of the single pointer lane, in rem. Labels sit on top, then a leader
 // line drops to the top-centre of the target cell, stopping a small margin
@@ -111,8 +159,8 @@ const pointers = computed<Pointer[]>(() => {
   const cols = columns.value
 
   const resolved = trackers.value.map<Resolved | null>((tracker) => {
-    const raw = rawIndexAt(tracker.values, clicks.value)
-    if (raw === null) return null
+    const raw = valueAt(tracker.values, clicks.value)
+    if (raw === undefined || raw === null) return null
 
     // Resolve Python-style negative indices when enabled.
     const index = raw < 0 && props.negative === 'wrap' ? cols + raw : raw
@@ -242,10 +290,13 @@ const pointers = computed<Pointer[]>(() => {
       :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }"
     >
       <div
-        v-for="(item, index) in items"
-        :key="index"
+        v-for="(item, index) in cellValues"
+        :key="`${index}-${item}`"
         class="list-tracker__cell"
-        :class="{ 'list-tracker__cell--active': highlight && pointers.some(t => t.index === index) }"
+        :class="{
+          'list-tracker__cell--active': highlight && pointers.some(t => t.index === index),
+          'list-tracker__cell--changed': changedCells.has(index),
+        }"
       >
         {{ item }}
       </div>
@@ -359,6 +410,21 @@ const pointers = computed<Pointer[]>(() => {
   background: var(--tracker-active-bg, rgba(122, 162, 255, 0.14));
 }
 
+/* A cell edited on the current click flashes once, then fades back. The inset
+   shadow layers the tint above the cell background without clobbering it. */
+.list-tracker__cell--changed {
+  animation: list-tracker-flash var(--tracker-flash-duration, 900ms) ease-out;
+}
+
+@keyframes list-tracker-flash {
+  from {
+    box-shadow: inset 0 0 0 100px var(--tracker-changed-bg, rgba(255, 196, 0, 0.4));
+  }
+  to {
+    box-shadow: inset 0 0 0 100px transparent;
+  }
+}
+
 .list-tracker__ruler {
   margin-top: 0.15rem;
 }
@@ -375,6 +441,11 @@ const pointers = computed<Pointer[]>(() => {
   .list-tracker__arrow-line,
   .list-tracker__lane {
     transition: none;
+  }
+
+  .list-tracker__cell--changed {
+    animation: none;
+    box-shadow: inset 0 0 0 100px var(--tracker-changed-bg, rgba(255, 196, 0, 0.4));
   }
 }
 </style>

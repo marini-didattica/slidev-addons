@@ -20,7 +20,7 @@ the slides:
 | `Badge`   | `accent`, `round` | Small uppercase pill label. |
 | `Counter` | `count` | Minimal -/+ counter. |
 | `ClicksSlider` | — | Click/step rail with a counter, for the interactive traces. |
-| `ListTracker` | `items`, `trackers`, `highlight`, `showLabels`, `showIndexes`, `negative`, `markOutOfBounds` | Draws a list as a grid with small index labels and one moving pointer per tracked variable, driven by clicks. |
+| `ListTracker` | `items`, `trackers`, `updates`, `highlight`, `showLabels`, `showIndexes`, `negative`, `markOutOfBounds` | Draws a list as a grid with small index labels and one moving pointer per tracked variable, driven by clicks. Cell contents can also change over the clicks through `updates`. |
 
 ### `ListTracker`
 
@@ -73,6 +73,28 @@ on the left and `j` on the right if that is how they were ordered:
 />
 ```
 
+### Updating the list
+
+The cells do not have to stay fixed: pass `updates` to edit their contents over
+the clicks, without changing the length of the list. It maps a cell index to a
+`{ click: value }` map, read with the same rule as `trackers` — at click `c` the
+cell shows the value of the greatest key `<= c`, falling back to `items`. A cell
+that changes on the current click briefly flashes (a fading tint) to draw the eye
+to the edit:
+
+```md
+<ListTracker
+  :items="[5, -2, 8, -1, 3]"
+  :trackers="{ i: { 1: 0, 4: 1, 7: 2, 10: 3, 13: 4 } }"
+  :updates="{ 1: { 4: 0 }, 3: { 10: 0 } }"
+  highlight
+/>
+```
+
+Here `items[1]` becomes `0` at click `4` and `items[3]` becomes `0` at click
+`10`. `updates` also accepts an ordered array of `{ index, values }` objects, for
+symmetry with `trackers`.
+
 ## Theming
 
 Every component ships sensible default styles and exposes `--<component>-*` CSS
@@ -86,7 +108,7 @@ same variables to retheme the components elsewhere.
 | `Badge` | `--badge-bg`, `--badge-color`, `--badge-border`, `--badge-radius`, `--badge-padding`, `--badge-font`, `--badge-font-size`, `--badge-font-weight`, `--badge-line-height`, `--badge-letter-spacing`, `--badge-accent-color`, `--badge-round-padding`, `--badge-round-font-size` |
 | `Counter` | `--counter-border`, `--counter-radius`, `--counter-padding`, `--counter-font`, `--counter-hover-bg` |
 | `ClicksSlider` | `--clicks-slider-accent`, `--clicks-slider-track`, `--clicks-slider-radius`, `--clicks-slider-font` |
-| `ListTracker` | `--tracker-border`, `--tracker-cell-bg`, `--tracker-cell-fg`, `--tracker-radius`, `--tracker-font`, `--tracker-index-color`, `--tracker-pointer-color`, `--tracker-active-bg`, `--tracker-out-of-bounds`, `--tracker-transition` |
+| `ListTracker` | `--tracker-border`, `--tracker-cell-bg`, `--tracker-cell-fg`, `--tracker-radius`, `--tracker-font`, `--tracker-index-color`, `--tracker-pointer-color`, `--tracker-active-bg`, `--tracker-out-of-bounds`, `--tracker-changed-bg`, `--tracker-flash-duration`, `--tracker-transition` |
 
 ## Usage
 
