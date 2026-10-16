@@ -21,6 +21,11 @@ const props = withDefaults(
     trackers: Tracker[] | Record<string, Record<number, number | null>>
     /** Highlight the cell currently pointed at. */
     highlight?: boolean
+    /**
+     * Draw the pointer overlays (label + leader line) above the grid.
+     * Set to `false` to keep only the cell highlight.
+     */
+    showLabels?: boolean
     /** Draw the small index ruler under the grid. */
     showIndexes?: boolean
     /**
@@ -34,6 +39,7 @@ const props = withDefaults(
   }>(),
   {
     highlight: false,
+    showLabels: true,
     showIndexes: true,
     negative: 'invalid',
     markOutOfBounds: true,
@@ -205,6 +211,7 @@ const pointers = computed<Pointer[]>(() => {
 <template>
   <div class="list-tracker">
     <div
+      v-if="showLabels"
       class="list-tracker__lane"
       :class="{ 'list-tracker__lane--visible': pointers.length > 0 }"
       :style="{ '--tracker-lane-height': `${LANE_HEIGHT}rem` }"

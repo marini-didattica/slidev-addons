@@ -20,7 +20,7 @@ the slides:
 | `Badge`   | `accent`, `round` | Small uppercase pill label. |
 | `Counter` | `count` | Minimal -/+ counter. |
 | `ClicksSlider` | — | Click/step rail with a counter, for the interactive traces. |
-| `ListTracker` | `items`, `trackers`, `highlight`, `showIndexes`, `negative`, `markOutOfBounds` | Draws a list as a grid with small index labels and one moving pointer per tracked variable, driven by clicks. |
+| `ListTracker` | `items`, `trackers`, `highlight`, `showLabels`, `showIndexes`, `negative`, `markOutOfBounds` | Draws a list as a grid with small index labels and one moving pointer per tracked variable, driven by clicks. |
 
 ### `ListTracker`
 
@@ -36,7 +36,12 @@ the current click. Values use the same absolute click numbers as `v-click`:
 ```
 
 At click `c` a pointer takes the value of the greatest key `<= c`; before the
-first key, or when the value is `null`, it is hidden. An out-of-bounds index
+first key, or when the value is `null`, it is hidden. Set `:show-labels="false"`
+to drop the pointer labels and their leader lines while still highlighting the
+tracked cell(s) — useful when the values are already shown elsewhere and only
+the active cell should stand out.
+
+An out-of-bounds index
 (`>= items.length`, or negative) pins the pointer to the nearest grid edge,
 turns it red and aims its arrow towards that edge, so it never overflows the
 component. Set `:mark-out-of-bounds="false"` to keep edge pointers plain. The
